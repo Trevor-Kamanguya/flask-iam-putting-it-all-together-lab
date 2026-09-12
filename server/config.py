@@ -1,77 +1,24 @@
-from sqlalchemy.orm import validates
-from sqlalchemy.ext.hybrid import hybrid_property
-from marshmallow import Schema, fields
+from flask import Flask
+from flask_bcrypt import Bcrypt
+from flask_migrate import Migrate
+from flask_restful import Api
+from flask_sqlalchemy import SQLAlchemy
+from sqlalchemy import MetaData
 
-from config import db, bcrypt
+app = Flask(__name__)
+app.secret_key = b'Y\xf1Xz\x00\xad|eQ\x80t \xca\x1a\x10K'
+app.config['SQLALCHEMY_DATABASE_URI'] = 'sqlite:///app.db'
+app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
+app.json.compact = False
 
+metadata = MetaData(naming_convention={
+    "fk": "fk_%(table_name)s_%(column_0_name)s_%(referred_table_name)s",
+})
+db = SQLAlchemy(metadata=metadata)
 
-class User(db.Model):
-    __tablename__ = 'users'
+migrate = Migrate(app, db)
+db.init_app(app)
 
-    id = db.Column(db.Integer, primary_key=True)
-    username = db.Column(db.String, unique=True, nullable=False)
-    _password_hash = db.Column(db.String)
-    image_url = db.Column(db.String)
-    bio = db.Column(db.String)
+bcrypt = Bcrypt(app)
 
-    recipes = db.relationship('Recipe', back_populates='user')
-
-    @hybrid_property
-    def password_hash(self):
-        raise AttributeError('Password hashes may not be viewed.')
-
-    @password_hash.setter
-    def password_hash(self, password):
-        password_hash = bcrypt.generate_password_hash(
-            password.encode('utf-8'))
-        self._password_hash = password_hash.decode('utf-8')
-
-    def authenticate(self, password):
-        return bcrypt.check_password_hash(
-            self._password_hash, password.encode('utf-8'))
-
-    @validates('username')
-    def validate_username(self, key, username):
-        if not username:
-            raise ValueError('Username must be present.')
-        return username
-
-    def __repr__(self):
-        return f'<User {self.username}>'
-
-
-class Recipe(db.Model):
-    __tablename__ = 'recipes'
-
-    id = db.Column(db.Integer, primary_key=True)
-    title = db.Column(db.String, nullable=False)
-    instructions = db.Column(db.String, nullable=False)
-    minutes_to_complete = db.Column(db.Integer)
-
-    user_id = db.Column(db.Integer, db.ForeignKey('users.id'))
-    user = db.relationship('User', back_populates='recipes')
-
-    @validates('instructions')
-    def validate_instructions(self, key, instructions):
-        if not instructions or len(instructions) < 50:
-            raise ValueError(
-                'Instructions must be present and at least 50 characters long.')
-        return instructions
-
-    def __repr__(self):
-        return f'<Recipe {self.title}>'
-
-
-class UserSchema(Schema):
-    id = fields.Integer()
-    username = fields.String()
-    image_url = fields.String()
-    bio = fields.String()
-
-
-class RecipeSchema(Schema):
-    id = fields.Integer()
-    title = fields.String()
-    instructions = fields.String()
-    minutes_to_complete = fields.Integer()
-    user = fields.Nested(UserSchema)
+api = Api(app)
